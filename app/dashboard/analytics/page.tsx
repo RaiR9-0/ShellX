@@ -123,7 +123,7 @@ function NoDataScreen({ dbName }: { dbName?: string }) {
 
 export default function AnalyticsPage() {
   const { data, isLoading, error } = useSWR("/api/spark-results", fetcher, { revalidateOnFocus: false })
-  const [tab, setTab] = useState<"overview" | "sucursales" | "productos" | "tiempo" | "empleados">("overview")
+  const [tab, setTab] = useState<"overview" | "sucursales" | "productos" | "tiempo" | "empleados" | "spk">("overview")
 
   if (isLoading) return <LoadingScreen />
   if (error || !data || data.error) return <NoDataScreen dbName={data?._meta?.userDbName} />
@@ -140,6 +140,8 @@ export default function AnalyticsPage() {
     percentiles_ventas: percentiles = {} as Record<string, number>,
     sucursales_nombres: sucNombres = [],
     _meta: meta = {} as Record<string, unknown>,
+    intentos_empleados: intentosEmp = {} as { total: number; por_empleado: { codigo: string; nombre: string; sucursal: string; totalIntentos: number; ultimoIntento: string | null }[]; por_sucursal: { sucursal: string; totalIntentos: number }[]; serie_diaria: { dia: string; intentos: number }[] },
+    intentos_propietario: intentosProp = {} as { total: number; serie_diaria: { dia: string; intentos: number }[]; serie_por_hora: { hora: string; intentos: number }[] },
   } = data
 
   const tabs = [
@@ -148,6 +150,7 @@ export default function AnalyticsPage() {
     { id: "productos",  label: "Productos",  emoji: "📦" },
     { id: "tiempo",     label: "Tiempo",     emoji: "🕐" },
     { id: "empleados",  label: "Empleados",  emoji: "👥" },
+    { id: "spk",        label: "Análisis SPK", emoji: "🔐" },
   ]
 
   return (
@@ -560,6 +563,191 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
             </ChartCard>
           )}
+        </div>
+      )}
+
+      {/* ── ANÁLISIS SPK ── */}
+      {tab === "spk" && (
+        <div className="space-y-5">
+          {/* KPIs de intentos */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="relative overflow-hidden rounded-2xl p-5 flex flex-col gap-2"
+              style={{ background: "linear-gradient(135deg, #1a1a2e 60%, #E74C3C18)", border: "1px solid #E74C3C40" }}>
+              <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full opacity-10" style={{ background: "#E74C3C" }} />
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔐</span>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#E74C3C" }}>Intentos Fallidos · Empleados</p>
+              </div>
+              <p className="text-3xl font-black text-white">{(intentosEmp.total || 0).toLocaleString()}</p>
+              <p className="text-[10px] text-white/40 font-mono">COUNT(intentos_fallidos_empleados)</p>
+            </div>
+            <div className="relative overflow-hidden rounded-2xl p-5 flex flex-col gap-2"
+              style={{ background: "linear-gradient(135deg, #1a1a2e 60%, #DAA52018)", border: "1px solid #DAA52040" }}>
+              <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full opacity-10" style={{ background: "#DAA520" }} />
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔑</span>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#DAA520" }}>Intentos Fallidos · Propietario</p>
+              </div>
+              <p className="text-3xl font-black text-white">{(intentosProp.total || 0).toLocaleString()}</p>
+              <p className="text-[10px] text-white/40 font-mono">COUNT(intentos_fallidos_propietario)</p>
+            </div>
+          </div>
+
+          {/* Intentos por empleado */}
+          <ChartCard>
+            <SectionHeader title="Intentos Fallidos por Empleado" op="GroupBy + COUNT(*)" color="#E74C3C" />
+            {(intentosEmp.por_empleado || []).length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={intentosEmp.por_empleado || []} layout="vertical" margin={{ top: 0, right: 30, left: 140, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)" }} allowDecimals={false} />
+                  <YAxis type="category" dataKey="nombre" tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }} width={135} />
+                  <Tooltip contentStyle={TT} formatter={(v: number) => [v, "Intentos fallidos"]} />
+                  <Bar dataKey="totalIntentos" radius={[0, 6, 6, 0]}>
+                    {(intentosEmp.por_empleado || []).map((_: unknown, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-36 gap-2">
+                <span className="text-3xl">✅</span>
+                <p className="text-white/30 text-sm font-mono">Sin intentos fallidos registrados</p>
+              </div>
+            )}
+          </ChartCard>
+
+          {/* Intentos por sucursal */}
+          {(intentosEmp.por_sucursal || []).length > 0 && (
+            <ChartCard>
+              <SectionHeader title="Intentos Fallidos por Sucursal" op="GroupBy sucursal_codigo" color="#E67E22" />
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={intentosEmp.por_sucursal || []} margin={{ top: 5, right: 20, left: 10, bottom: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="sucursal" tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }} angle={-20} textAnchor="end" interval={0} />
+                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)" }} allowDecimals={false} />
+                  <Tooltip contentStyle={TT} formatter={(v: number) => [v, "Intentos"]} />
+                  <Bar dataKey="totalIntentos" radius={[6, 6, 0, 0]}>
+                    {(intentosEmp.por_sucursal || []).map((_: unknown, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+
+          {/* Tabla detallada empleados */}
+          {(intentosEmp.por_empleado || []).length > 0 && (
+            <ChartCard>
+              <SectionHeader title="Detalle de Intentos por Empleado" op="JOIN empleados · ORDER BY intentos DESC" color="#9B59B6" />
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                      {["#", "Código", "Empleado", "Sucursal", "Intentos", "Último intento"].map((h) => (
+                        <th key={h} className="py-2 px-3 text-left font-bold" style={{ color: "rgba(255,255,255,0.35)", textTransform: "uppercase", fontSize: "9px", letterSpacing: "0.05em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(intentosEmp.por_empleado || []).map((emp: { codigo: string; nombre: string; sucursal: string; totalIntentos: number; ultimoIntento: string | null }, i: number) => (
+                      <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
+                        className="hover:bg-white/5 transition-colors">
+                        <td className="py-2 px-3 font-mono text-white/30">{i + 1}</td>
+                        <td className="py-2 px-3 font-mono text-yellow-400/70">{emp.codigo}</td>
+                        <td className="py-2 px-3 text-white font-semibold">{emp.nombre}</td>
+                        <td className="py-2 px-3 text-white/50">{emp.sucursal}</td>
+                        <td className="py-2 px-3">
+                          <span className="px-2 py-0.5 rounded-full font-bold"
+                            style={{ background: "rgba(231,76,60,0.2)", color: "#E74C3C", border: "1px solid rgba(231,76,60,0.3)" }}>
+                            {emp.totalIntentos}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-white/30 font-mono text-[10px]">
+                          {emp.ultimoIntento ? new Date(emp.ultimoIntento).toLocaleString("es-MX") : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </ChartCard>
+          )}
+
+          {/* Serie diaria empleados */}
+          {(intentosEmp.serie_diaria || []).length > 0 && (
+            <ChartCard>
+              <SectionHeader title="Evolución Diaria · Intentos de Empleados" op="EXTRACT(DATE) + COUNT(*)" color="#3498DB" />
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={intentosEmp.serie_diaria || []} margin={{ top: 5, right: 20, left: 10, bottom: 30 }}>
+                  <defs>
+                    <linearGradient id="empGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#E74C3C" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#E74C3C" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="dia" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.35)" }} angle={-25} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)" }} allowDecimals={false} />
+                  <Tooltip contentStyle={TT} formatter={(v: number) => [v, "Intentos"]} />
+                  <Area type="monotone" dataKey="intentos" stroke="#E74C3C" fill="url(#empGrad)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+
+          {/* Intentos propietario */}
+          <ChartCard>
+            <SectionHeader title="Intentos Fallidos de PIN · Propietario" op="COUNT intentos_fallidos_propietario" color="#DAA520" />
+            {(intentosProp.serie_diaria || []).length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={intentosProp.serie_diaria || []} margin={{ top: 5, right: 20, left: 10, bottom: 30 }}>
+                  <defs>
+                    <linearGradient id="propGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#DAA520" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#DAA520" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="dia" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.35)" }} angle={-25} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)" }} allowDecimals={false} />
+                  <Tooltip contentStyle={TT} formatter={(v: number) => [v, "Intentos PIN propietario"]} />
+                  <Area type="monotone" dataKey="intentos" stroke="#DAA520" fill="url(#propGrad)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-36 gap-2">
+                <span className="text-3xl">🛡️</span>
+                <p className="text-white/30 text-sm font-mono">Sin intentos fallidos de propietario</p>
+              </div>
+            )}
+            {(intentosProp.serie_por_hora || []).length > 0 && (
+              <>
+                <div className="mt-5">
+                  <p className="text-white/40 text-[10px] font-mono uppercase tracking-widest mb-3">Distribución por hora del día</p>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={intentosProp.serie_por_hora || []} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="hora" tick={{ fontSize: 8, fill: "rgba(255,255,255,0.35)" }} />
+                      <YAxis tick={{ fontSize: 8, fill: "rgba(255,255,255,0.3)" }} allowDecimals={false} />
+                      <Tooltip contentStyle={TT} formatter={(v: number) => [v, "Intentos"]} />
+                      <Bar dataKey="intentos" radius={[4, 4, 0, 0]} fill="#DAA520" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </ChartCard>
+
+          {/* Info banner */}
+          <div className="rounded-2xl p-4 flex items-start gap-3 border border-yellow-500/20" style={{ background: "#12121f" }}>
+            <span className="text-xl mt-0.5">ℹ️</span>
+            <div>
+              <p className="text-yellow-400 text-xs font-bold mb-1">¿Cómo se registran estos intentos?</p>
+              <p className="text-white/40 text-xs font-mono leading-relaxed">
+                Los intentos fallidos de empleados se registran en <span className="text-yellow-400/70">intentos_fallidos_empleados</span> cuando se ingresa una clave incorrecta al procesar una venta.
+                Los intentos del propietario se registran en <span className="text-yellow-400/70">intentos_fallidos_propietario</span> cuando se ingresa un PIN incorrecto en zonas restringidas (compras, empleados, ajustes).
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

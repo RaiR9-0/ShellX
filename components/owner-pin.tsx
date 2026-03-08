@@ -11,10 +11,11 @@ interface OwnerPinModalProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSuccess: () => void
+  onCancel?: () => void
   title?: string
 }
 
-export function OwnerPinModal({ open, onOpenChange, onSuccess, title = "Acción restringida" }: OwnerPinModalProps) {
+export function OwnerPinModal({ open, onOpenChange, onSuccess, onCancel, title = "Acción restringida" }: OwnerPinModalProps) {
   const [pin, setPin] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -43,6 +44,7 @@ export function OwnerPinModal({ open, onOpenChange, onSuccess, title = "Acción 
 
   function handleClose() {
     setPin(""); setError(""); onOpenChange(false)
+    if (onCancel) onCancel()
   }
 
   return (

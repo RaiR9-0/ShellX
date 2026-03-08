@@ -42,6 +42,14 @@ export const POST = withAuth(async ({ session, db }, request) => {
   })
 
   if (!empleado) {
+    // Log failed attempt - employee not found
+    await db.collection("intentos_fallidos_empleados").insertOne({
+      tipo: "empleado_no_encontrado",
+      empleado_codigo: empleado_codigo,
+      sucursal_codigo: sucursal_codigo,
+      fecha: new Date(),
+      motivo: "Código de empleado no encontrado o inactivo",
+    })
     return errorResponse("Empleado no encontrado o inactivo", 401)
   }
 
@@ -51,6 +59,15 @@ export const POST = withAuth(async ({ session, db }, request) => {
 
   const claveValida = await bcrypt.compare(empleado_clave, empleado.clave as string)
   if (!claveValida) {
+    // Log failed attempt - wrong password
+    await db.collection("intentos_fallidos_empleados").insertOne({
+      tipo: "clave_incorrecta",
+      empleado_codigo: empleado.codigo,
+      empleado_nombre: empleado.nombre,
+      sucursal_codigo: sucursal_codigo,
+      fecha: new Date(),
+      motivo: "Clave incorrecta",
+    })
     return errorResponse("Clave de empleado incorrecta", 401)
   }
 

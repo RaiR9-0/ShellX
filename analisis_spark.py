@@ -501,6 +501,149 @@ guardar_resultado("percentiles_ventas", {
     "p95": round(percentiles[4], 2) if percentiles else 0,
 })
 
+# ------------------------------------------------------------------
+#  3J. INTENTOS FALLIDOS DE EMPLEADOS
+# ------------------------------------------------------------------
+print("  [3J] Intentos fallidos de empleados...")
+
+intentos_emp_raw = list(mongo_db["intentos_fallidos_empleados"].find({}))
+
+if intentos_emp_raw:
+    from pyspark.sql.types import MapType
+    schema_intentos = StructType([
+        StructField("tipo", StringType(), True),
+        StructField("empleado_codigo", StringType(), True),
+        StructField("empleado_nombre", StringType(), True),
+        StructField("sucursal_codigo", StringType(), True),
+        StructField("fecha", TimestampType(), True),
+        StructField("motivo", StringType(), True),
+    ])
+
+    intentos_data = []
+    for r in intentos_emp_raw:
+        intentos_data.append((
+            str(r.get("tipo", "")),
+            str(r.get("empleado_codigo", "desconocido")),
+            str(r.get("empleado_nombre", "desconocido")),
+            str(r.get("sucursal_codigo", "desconocida")),
+            r.get("fecha"),
+            str(r.get("motivo", "")),
+        ))
+
+    df_intentos = spark.createDataFrame(intentos_data, schema_intentos)
+
+    # Agrupado por empleado
+    df_por_emp = (
+        df_intentos
+        .groupBy("empleado_codigo", "empleado_nombre", "sucursal_codigo")
+        .agg(
+            F.count("*").alias("totalIntentos"),
+            F.max("fecha").alias("ultimoIntento"),
+        )
+        .orderBy(F.desc("totalIntentos"))
+    )
+
+    intentos_por_empleado = [
+        {
+            "codigo": r["empleado_codigo"],
+            "nombre": r["empleado_nombre"] if r["empleado_nombre"] != "desconocido" else r["empleado_codigo"],
+            "sucursal": r["sucursal_codigo"],
+            "totalIntentos": int(r["totalIntentos"] or 0),
+            "ultimoIntento": r["ultimoIntento"].isoformat() if r["ultimoIntento"] else None,
+        }
+        for r in df_por_emp.collect()
+    ]
+
+    # Agrupado por sucursal
+    df_por_suc = (
+        df_intentos
+        .groupBy("sucursal_codigo")
+        .agg(F.count("*").alias("totalIntentos"))
+        .orderBy(F.desc("totalIntentos"))
+    )
+
+    intentos_por_sucursal = [
+        {
+            "sucursal": r["sucursal_codigo"],
+            "totalIntentos": int(r["totalIntentos"] or 0),
+        }
+        for r in df_por_suc.collect()
+    ]
+
+    # Serie temporal (por dia)
+    df_serie = (
+        df_intentos
+        .withColumn("dia", F.to_date("fecha"))
+        .groupBy("dia")
+        .agg(F.count("*").alias("intentos"))
+        .orderBy("dia")
+    )
+
+    serie_intentos_emp = [
+        {
+            "dia": str(r["dia"]),
+            "intentos": int(r["intentos"] or 0),
+        }
+        for r in df_serie.collect()
+    ]
+
+    guardar_resultado("intentos_empleados", {
+        "total": len(intentos_emp_raw),
+        "por_empleado": intentos_por_empleado,
+        "por_sucursal": intentos_por_sucursal,
+        "serie_diaria": serie_intentos_emp,
+    })
+else:
+    guardar_resultado("intentos_empleados", {
+        "total": 0,
+        "por_empleado": [],
+        "por_sucursal": [],
+        "serie_diaria": [],
+    })
+
+# ------------------------------------------------------------------
+#  3K. INTENTOS FALLIDOS DEL PROPIETARIO
+# ------------------------------------------------------------------
+print("  [3K] Intentos fallidos del propietario...")
+
+intentos_prop_raw = list(mongo_db["intentos_fallidos_propietario"].find({}))
+
+if intentos_prop_raw:
+    # Serie temporal (por dia)
+    from collections import Counter, defaultdict
+    by_day = defaultdict(int)
+    by_hour = defaultdict(int)
+    for r in intentos_prop_raw:
+        fecha = r.get("fecha")
+        if fecha:
+            day_key = fecha.strftime("%Y-%m-%d")
+            hour_key = fecha.hour
+            by_day[day_key] += 1
+            by_hour[hour_key] += 1
+
+    serie_prop_diaria = [
+        {"dia": k, "intentos": v}
+        for k, v in sorted(by_day.items())
+    ]
+
+    serie_prop_hora = [
+        {"hora": f"{h:02d}:00", "intentos": by_hour.get(h, 0)}
+        for h in range(24)
+        if by_hour.get(h, 0) > 0
+    ]
+
+    guardar_resultado("intentos_propietario", {
+        "total": len(intentos_prop_raw),
+        "serie_diaria": serie_prop_diaria,
+        "serie_por_hora": serie_prop_hora,
+    })
+else:
+    guardar_resultado("intentos_propietario", {
+        "total": 0,
+        "serie_diaria": [],
+        "serie_por_hora": [],
+    })
+
 # =============================================================================
 #  STEP 4 — GUARDAR METADATA DEL JOB
 # =============================================================================
@@ -511,7 +654,7 @@ print("=" * 55)
 guardar_resultado("job_metadata", {
     "estado": "completado",
     "totalRegistrosProcesados": total_registros,
-    "jobsEjecutados": 9,
+    "jobsEjecutados": 11,
     "sparkVersion": spark.version,
     "procesadoEn": datetime.now(timezone.utc).isoformat(),
 })

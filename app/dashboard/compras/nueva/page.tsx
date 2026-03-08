@@ -81,7 +81,7 @@ export default function NuevaCompraPage() {
           <p className="text-[#6B7280] text-sm text-center">Esta sección requiere el PIN del dueño.</p>
           <Button onClick={() => setPinOpen(true)} className="bg-[#DAA520] hover:bg-[#B8860B] text-white font-bold cursor-pointer">Ingresar PIN</Button>
         </div>
-        <OwnerPinModal open={pinOpen} onOpenChange={(v) => { if (!v && !pinVerified) router.push("/dashboard/compras"); setPinOpen(v) }} onSuccess={() => { setPinVerified(true); setPinOpen(false) }} title="Acceso a Nueva Compra" />
+        <OwnerPinModal open={pinOpen} onOpenChange={(v) => { setPinOpen(v) }} onCancel={() => router.push("/dashboard/compras")} onSuccess={() => { setPinVerified(true); setPinOpen(false) }} title="Acceso a Nueva Compra" />
       </>
     )
   }

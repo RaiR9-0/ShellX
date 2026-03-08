@@ -16,7 +16,15 @@ export const POST = withAuth(async ({ db }, request) => {
   if (!config?.pin_hash) return errorResponse("PIN de dueño no configurado. Configúralo en Ajustes.", 404)
 
   const valid = await bcrypt.compare(String(pin), config.pin_hash)
-  if (!valid) return errorResponse("PIN incorrecto", 401)
+  if (!valid) {
+    // Log failed owner PIN attempt
+    await db.collection("intentos_fallidos_propietario").insertOne({
+      tipo: "pin_incorrecto",
+      fecha: new Date(),
+      motivo: "PIN de propietario incorrecto",
+    })
+    return errorResponse("PIN incorrecto", 401)
+  }
 
   return jsonResponse({ success: true })
 })
